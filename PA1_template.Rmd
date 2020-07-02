@@ -179,7 +179,7 @@ Task: Make a panel plot containing a time series plot of the 5-minute interval (
 ```{r}
 summary2 <- data2 %>% 
   group_by(interval, is_weekend) %>%
-  summarise(avg = mean(steps))
+  summarise(avg = mean(steps), .groups = "keep")
 
 xyplot(avg~interval|is_weekend, 
        data = summary2, 
