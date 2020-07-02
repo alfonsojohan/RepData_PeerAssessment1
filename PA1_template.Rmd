@@ -5,21 +5,201 @@ output:
     keep_md: true
 ---
 
+For this project we will be using the following libraries. 
+If you do not have them installed, please do so before running the code chunks.
+
+- dplyr
+
+```{r extract_zip, echo=FALSE}
+if (!file.exists("activity.csv")) {
+  unzip("activity.zip", overwrite = TRUE)
+}
+```
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Load the dplyr library. Do it here so that the ouput is not echoed
+library(dplyr)
+```
 
 ## Loading and preprocessing the data
 
+The activity data can be loaded using the `read.csv()` function. 
+To simplify the analysis process we will use the dplyr package. 
+We will also convert the date column to Date.
+
+```{r load_preprocess}
+# The dplyr library is already loaded earlier.
+data <- as_tibble(read.csv("activity.csv"))
+data$date <- as.Date(data$date, format = "%Y-%m-%d")
+```
 
 
 ## What is mean total number of steps taken per day?
 
+Task: We are required to determine the following:
+
+1. Calculate the total number of steps taken per day
+2. Calculate and report the mean and median of the total number of 
+steps taken per day
+
+This can be achieved with a single call to summarize grouped by date. 
+We will remove the NA values to calculate the totals, mean and median.
+
+```{r}
+daily_summary <- data %>% group_by(date) %>% 
+  summarise(daily_total = sum(steps), .groups = "keep")
+```
+
+Task: Make a histogram of the total number of steps taken each day
+
+```{r}
+# set breaks to equal to the number of observations
+hist(daily_summary$daily_total, main = "Daily Steps Total Frequency", 
+     xlab = "Total Steps per Day", breaks = nrow(daily_summary))
+```
+
+Mean of the Total Steps daily
+```{r}
+ori_mean <- mean(daily_summary$daily_total, na.rm = TRUE)
+ori_mean
+```
+
+Median of the Total Steps daily
+```{r}
+ori_median <- median(daily_summary$daily_total, na.rm = TRUE)
+ori_median
+```
 
 
 ## What is the average daily activity pattern?
 
+To complete the tasks for this section, we need to summarize the data by the intervals. 
+
+```{r}
+activity_summary <- data %>% group_by(interval) %>% 
+  summarise(mean = mean(steps, na.rm = T), .groups = "keep")
+```
+
+Task: Make a time series plot of the 5-minute interval (x-axis) and the 
+average number of steps taken, averaged across all days (y-axis)
+
+```{r}
+with(activity_summary, {
+     plot(mean~interval, 
+          data = activity_summary, 
+          type = "l", 
+          xlab = "Mean", 
+          ylab = "Interval", 
+          main = "Mean of Steps Taken in 5 minute Interval", 
+          col = "magenta")
+  
+     abline(v = activity_summary[[which.max(activity_summary$mean), 1]], 
+            col = "blue")
+})
+```
+
+
+Task: Which 5-minute interval, on average across all the days in the dataset, 
+contains the maximum number of steps?
+
+The interval with the highest mean value is: 
+
+```{r}
+activity_summary[[which.max(activity_summary$mean), 1]]
+```
 
 
 ## Imputing missing values
 
+Task: Calculate and report the total number of missing values in the data set
+
+```{r}
+sum(is.na(data))
+```
+
+
+Task: Devise a strategy for filling in all of the missing values in the data set. 
+
+***We can use the mean of the total steps for the same week days as the missing values.*** 
+
+From the table we can see the missing days are:
+```{r}
+missing_dates <- daily_summary[is.na(daily_summary$daily_total), ]
+missing_dates$weekday = weekdays(missing_dates$date)
+knitr::kable(missing_dates)
+```
+
+##### Mean of Total Steps by Weekday
+
+Assign the weekday to the data set, and calculate the weekday means
+
+```{r}
+# Assign weekday and calculate mean by week day
+daily_summary$weekday <- weekdays(daily_summary$date)
+
+# Calculate the mean for each weekday
+wkday_mean <- daily_summary[!is.na(daily_summary$daily_total), ] %>% 
+  group_by(weekday) %>%
+  summarise(wkday_mean = mean(daily_total), .groups = "keep")
+
+knitr::kable(wkday_mean)
+```
+
+We will use this mean value to use in the new table, for example since 2012-10-01
+is a Monday, we will use the Monday average to replace the **NA**
+
+Task: Create a new dataset that is equal to the original dataset but with the
+missing data filled in.
+    
+Since we already have the total steps mean by weekday, we can replace the NA 
+values in the original data set. The task requires us to create a **new** 
+dataset, we will copy the original and then only replace the values.
+
+```{r}
+# Create new copy of the data set
+new_summary <- daily_summary
+
+# Assign the value of the mean to the missing dates in the new dataset
+for (day in wkday_mean$weekday) {
+  new_summary[is.na(new_summary$daily_total & new_summary$weekday == day), 2] <- 
+    as.integer(wkday_mean[wkday_mean$weekday == day, 2])
+}
+```
+
+    
+Task: Make a histogram of the total number of steps taken each day and Calculate 
+and report the mean and median total number of steps taken per day. 
+
+```{r}
+hist(new_summary$daily_total, main = "Daily Steps Total Frequency (with imputed values)", xlab = "Total Steps per Day", breaks = nrow(new_summary))
+```
+
+```{r, echo=FALSE}
+new_mean <- mean(new_summary$daily_total)
+new_median <- median(new_summary$daily_total)
+delta_mean <- (new_mean - ori_mean)/ori_mean * 100
+delta_median <- (new_median - ori_median)/ori_median * 100
+```
+
+The values have changed from the original estimate. The mean value has changed by `r delta_mean`% than the original estimate. 
+The median however, has increased by `r delta_median`% from the original estimate
+
+|        |Original Estimate| New Estimate| %Change |
+|------- |-----------------|-------------| ---- |
+|Mean |`r sprintf("%.2f", ori_mean)`|`r sprintf("%.2f", new_mean)`|`r delta_mean`|
+|Median |`r ori_median`|`r new_median`| `r delta_median` |
 
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+Task: Create a new factor variable in the dataset with two levels – “weekday” and “weekend” indicating whether a given date is a weekday or weekend day.
+
+```{r}
+# Assign weekday/weekend to new column
+new_summary[grepl("Saturday|Sunday", new_summary$weekday), 'is_weekend'] <- "weekend"
+new_summary[!grepl("Saturday|Sunday", new_summary$weekday), 'is_weekend'] <- "weekday"
+
+# convert to factor
+new_summary$is_weekend <- as.factor(new_summary$is_weekend)
+```
+
+Make a panel plot containing a time series plot of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all weekday days or weekend days (y-axis). See the README file in the GitHub repository to see an example of what this plot should look like using simulated data.
